@@ -20,7 +20,6 @@ func NewInfluxdbClient() *InfluxdbClient {
 	url := "http://127.0.0.1:8086"
 	token := "KhYF9SoMOHcb9m8DJnrwRH5LVwoRLy-YVGmZKSYegp6LC5CEiKoksGFF2KK4bZFx1gHiS4lCZKDP1V9kN2oUrw=="
 	ic.Client = influxdb2.NewClient(url, token)
-	fmt.Println(ic.Client)
 	org := "SJTU"
 	bucket := "metrics"
 	ic.WriteAPI = ic.Client.WriteAPIBlocking(org, bucket)
@@ -37,9 +36,15 @@ func (ic *InfluxdbClient) writeMetricsExample() {
 	ic.WriteAPI.WritePoint(context.Background(), p)
 }
 
-func (ic *InfluxdbClient) writeMetrics(name string, tag map[string]string, val interface{}, t time.Time) {
-	p := influxdb2.NewPoint(name, tag, map[string]interface{}{"val": val}, t)
+func (ic *InfluxdbClient) WriteMetrics(ml *MetricsLog) {
+	p := influxdb2.NewPoint(ml.Name, ml.Tag, map[string]interface{}{"val": ml.Val}, ml.Time)
 	ic.WriteAPI.WritePoint(context.Background(), p)
+}
+
+func (ic *InfluxdbClient) WriteMetricsFromLog(log string) {
+	ml := MetricsLog{}
+	ml.Parse(log)
+	ic.WriteMetrics(&ml)
 }
 
 func (ic *InfluxdbClient) queryMetricsExample() {
