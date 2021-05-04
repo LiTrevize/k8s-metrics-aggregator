@@ -7,10 +7,11 @@ import (
 )
 
 type MetricsLog struct {
-	Name string            `json:"name"`
-	Tag  map[string]string `json:"tag"`
-	Val  interface{}       `json:"val"`
-	Time time.Time         `json:"time"`
+	Name  string                 `json:"name"`
+	Tag   map[string]string      `json:"tag"`
+	Val   interface{}            `json:"val"`
+	Time  time.Time              `json:"time"`
+	Field map[string]interface{} `json:"field"`
 }
 
 func (ml *MetricsLog) Log() {

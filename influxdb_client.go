@@ -37,8 +37,13 @@ func (ic *InfluxdbClient) writeMetricsExample() {
 }
 
 func (ic *InfluxdbClient) WriteMetrics(ml *MetricsLog) {
-	p := influxdb2.NewPoint(ml.Name, ml.Tag, map[string]interface{}{"val": ml.Val}, ml.Time)
-	ic.WriteAPI.WritePoint(context.Background(), p)
+	if ml.Field == nil {
+		p := influxdb2.NewPoint(ml.Name, ml.Tag, map[string]interface{}{"val": ml.Val}, ml.Time)
+		ic.WriteAPI.WritePoint(context.Background(), p)
+	} else {
+		p := influxdb2.NewPoint(ml.Name, ml.Tag, ml.Field, ml.Time)
+		ic.WriteAPI.WritePoint(context.Background(), p)
+	}
 }
 
 func (ic *InfluxdbClient) WriteMetricsFromLog(log string) {
