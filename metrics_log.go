@@ -14,6 +14,13 @@ type MetricsLog struct {
 	Field map[string]interface{} `json:"field"`
 }
 
+func NewMetricsLog(name string) *MetricsLog {
+	mlog := &MetricsLog{
+		Name: name,
+		Tag:  make(map[string]string, 3)}
+	return mlog
+}
+
 func (ml *MetricsLog) Log() {
 	b, err := json.Marshal(ml)
 	if err != nil {

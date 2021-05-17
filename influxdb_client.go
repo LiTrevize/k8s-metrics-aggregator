@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -94,27 +95,25 @@ func (ic *InfluxdbClient) queryMetricsExample() {
 	}
 }
 
-func (ic *InfluxdbClient) queryMetricsLatest(name string) *MetricsLog {
-	ml := &MetricsLog{Name: name,
-		Tag:   make(map[string]string, 3),
-		Field: make(map[string]interface{}, 5)}
-	setTag := false
+func (ic *InfluxdbClient) queryMetricsLatest(name string) []*MetricsLog {
+	lastTime := ic.queryLastTime("_measurement", name)
+	mlogs := make([]*MetricsLog, 0, 5)
 	result, err := ic.QueryAPI.Query(context.Background(), fmt.Sprintf(`from(bucket:"%s")
-    |> range(start: -1d)
+    |> range(start: %v)
 	|> filter(fn: (r) => r._measurement == "%s")
-	|> last()`, ic.Bucket, name))
+	|> last()`, ic.Bucket, lastTime.Format(time.RFC3339), name))
 	if err == nil {
 		for result.Next() {
-			if !setTag {
-				for k, v := range result.Record().Values() {
-					if strings.HasPrefix(k, "_") || k == "result" || k == "table" {
-						continue
-					}
-					ml.Tag[k] = v.(string)
+			mlog := NewMetricsLog(name)
+			for k, v := range result.Record().Values() {
+				if strings.HasPrefix(k, "_") || k == "result" || k == "table" {
+					continue
 				}
-				setTag = true
+				mlog.Tag[k] = v.(string)
 			}
-			ml.Field[result.Record().Field()] = result.Record().Value()
+			mlog.Val = result.Record().Value()
+			mlog.Time = result.Record().Time()
+			mlogs = append(mlogs, mlog)
 		}
 		if result.Err() != nil {
 			fmt.Printf("query parsing error: %s\n", result.Err().Error())
@@ -122,25 +121,39 @@ func (ic *InfluxdbClient) queryMetricsLatest(name string) *MetricsLog {
 	} else {
 		fmt.Printf("query error: %s\n", err)
 	}
-	return ml
+	return mlogs
 }
 
-func (ic *InfluxdbClient) queryMetricsRange(name string, start string) *MetricsSeries {
-	ms := NewMetricsSeries(name)
-	setTag := false
+func (ic *InfluxdbClient) queryMetricsRange(name string, start string) []*MetricsSeries {
+	mlogs := make([]*MetricsSeries, 0, 5)
 	result, err := ic.QueryAPI.Query(context.Background(), fmt.Sprintf(`from(bucket:"%s")
     |> range(start: %s)
 	|> filter(fn: (r) => r._measurement == "%s")`, ic.Bucket, start, name))
 	if err == nil {
+		ms := NewMetricsSeries(name)
+		setTag := false
 		for result.Next() {
 			if !setTag {
 				for k, v := range result.Record().Values() {
 					if strings.HasPrefix(k, "_") || k == "result" || k == "table" {
 						continue
 					}
-					ms.Tag[k] = v
+					ms.Tag[k] = v.(string)
 				}
 				setTag = true
+			} else {
+				newTag := make(map[string]string, 3)
+				for k, v := range result.Record().Values() {
+					if strings.HasPrefix(k, "_") || k == "result" || k == "table" {
+						continue
+					}
+					newTag[k] = v.(string)
+				}
+				if !reflect.DeepEqual(ms.Tag, newTag) {
+					mlogs = append(mlogs, ms)
+					ms = NewMetricsSeries(name)
+					ms.Tag = newTag
+				}
 			}
 			ms.Values = append(ms.Values, result.Record().Value())
 			ms.Time = append(ms.Time, result.Record().Time())
@@ -151,7 +164,7 @@ func (ic *InfluxdbClient) queryMetricsRange(name string, start string) *MetricsS
 	} else {
 		fmt.Printf("query error: %s\n", err)
 	}
-	return ms
+	return mlogs
 }
 
 func (ic *InfluxdbClient) queryLastTime(tagKey, tagVal string) time.Time {
@@ -173,15 +186,15 @@ func (ic *InfluxdbClient) queryLastTime(tagKey, tagVal string) time.Time {
 }
 
 type MetricsSeries struct {
-	Name   string                 `json:"name"`
-	Tag    map[string]interface{} `json:"tag"`
-	Values []interface{}          `json:"values"`
-	Time   []time.Time            `json:"time"`
+	Name   string            `json:"name"`
+	Tag    map[string]string `json:"tag"`
+	Values []interface{}     `json:"values"`
+	Time   []time.Time       `json:"time"`
 }
 
 func NewMetricsSeries(name string) *MetricsSeries {
 	return &MetricsSeries{name,
-		make(map[string]interface{}, 3),
+		make(map[string]string, 3),
 		make([]interface{}, 0, 10),
 		make([]time.Time, 0, 10)}
 }

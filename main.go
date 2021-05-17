@@ -2,19 +2,36 @@ package main
 
 import (
 	"fmt"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
 	ma := NewMetricsAggregator()
 	fmt.Println(ma.LastAggregateTimeForNode("ubuntu16"))
-	ma.IC.queryMetricsExample()
-	// ma.Aggregate(time.Minute)
-	// ic := NewInfluxdbClient()
-	// ic.writeMetricsExample()
-	// ic.WriteMetricsFromLog(`{"name":"cpu_usage_nano_cores","tag":{"node":"ubuntu16"},"val":195703672,"time":"2021-05-06T14:07:13.234253206+08:00"}`)
-	// ic.WriteMetricsFromLog(`{"name":"gpu_device_info","tag":{"GPU":"0","UUID":"GPU-25be9bfa-ba12-0ab4-5fee-b1c4763a8eef","model":"GeForce GTX 1080 Ti","node":"ubuntu16"},"val":null,"time":"2021-05-06T14:07:13.234253206+08:00","field":{"bandwidth":"15760 MB/s","clock_cores":"1911 MHz","clock_memory":"5505 MHz","memory":"11178 MiB","power":"250 W"}}`)
-	// ms := ic.queryMetricsRange("cpu_usage_nano_cores", "-1d")
-	// fmt.Printf("%+v\n", ms)
-	// ml := ic.queryMetricsLatest("gpu_device_info")
-	// fmt.Printf("%+v\n", ml)
+	mlogs := ma.IC.queryMetricsRange("pod_memory_usage_bytes", "-1d")
+	for _, mlog := range mlogs {
+		fmt.Printf("%+v\n", mlog)
+	}
+
+	// http server
+	// 1.创建路由
+	r := gin.Default()
+	// 2.绑定路由规则，执行的函数
+	// gin.Context，封装了request和response
+	r.GET("/metrics/:name", func(c *gin.Context) {
+		name := c.Param("name")
+		start := c.DefaultQuery("start", "")
+		if start == "" {
+			mlogs := ma.IC.queryMetricsLatest(name)
+			c.JSON(http.StatusOK, map[string][]*MetricsLog{"data": mlogs})
+		} else {
+			mlogs := ma.IC.queryMetricsRange(name, start)
+			c.JSON(http.StatusOK, map[string][]*MetricsSeries{"data": mlogs})
+		}
+	})
+	// 3.监听端口，默认在8080
+	// Run("里面不指定端口号默认为8080")
+	r.Run(":8087")
 }

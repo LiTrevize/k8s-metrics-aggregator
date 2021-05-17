@@ -4,6 +4,7 @@ go 1.16
 
 require (
 	github.com/docker/spdystream v0.0.0-20160310174837-449fdfce4d96 // indirect
+	github.com/gin-gonic/gin v1.7.1 // indirect
 	github.com/gophercloud/gophercloud v0.1.0 // indirect
 	github.com/influxdata/influxdb-client-go/v2 v2.3.0 // indirect
 	k8s.io/api v0.21.0 // indirect
