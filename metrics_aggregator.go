@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
 	"io"
 	"path/filepath"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,15 +17,21 @@ import (
 )
 
 type MetricsAggregator struct {
-	IC *InfluxdbClient
+	IC                *InfluxdbClient
+	ClientSet         *kubernetes.Clientset
+	LastAggregateTime map[string]time.Time
 }
 
 func NewMetricsAggregator() *MetricsAggregator {
 	ic := NewInfluxdbClient()
-	return &MetricsAggregator{IC: ic}
+	clientset := NewClientSet()
+	return &MetricsAggregator{
+		IC:                ic,
+		ClientSet:         clientset,
+		LastAggregateTime: make(map[string]time.Time, 10)}
 }
 
-func (ma *MetricsAggregator) Test() {
+func NewClientSet() *kubernetes.Clientset {
 	var kubeconfig *string
 	if home := homedir.HomeDir(); home != "" {
 		kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
@@ -43,38 +51,71 @@ func (ma *MetricsAggregator) Test() {
 	if err != nil {
 		panic(err.Error())
 	}
-	podlist, err := clientset.CoreV1().Pods("monitoring").List(context.TODO(), metav1.ListOptions{LabelSelector: "app=metrics-logger"})
+	return clientset
+}
+
+func (ma *MetricsAggregator) LastAggregateTimeForNode(nodeName string) time.Time {
+	if lastTime, ok := ma.LastAggregateTime[nodeName]; ok {
+		return lastTime
+	}
+	ma.LastAggregateTime[nodeName] = ma.IC.queryLastTime("node", nodeName)
+	return ma.LastAggregateTime[nodeName]
+}
+
+func (ma *MetricsAggregator) AggregateFromContainer(namespace, podname, containername string, sinceTime time.Time) (time.Time, int) {
+	req := ma.ClientSet.CoreV1().Pods(namespace).GetLogs(podname, &corev1.PodLogOptions{Container: containername, SinceTime: &metav1.Time{Time: sinceTime}})
+	podLogs, err := req.Stream(context.TODO())
+	if err != nil {
+		fmt.Println("error in opening stream: ", err)
+	}
+	defer podLogs.Close()
+	lineReader := bufio.NewReader(podLogs)
+	newTime := sinceTime
+	count := 0
+	for {
+		line, err := lineReader.ReadSlice('\n')
+
+		if len(line) == 0 {
+			break
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			fmt.Println("error read line: ", err)
+		}
+		// write to InfluxDB
+		mlog := ma.IC.WriteMetricsFromLogBytes(line)
+		if mlog != nil {
+			newTime = mlog.Time
+			count++
+		}
+
+	}
+	return newTime, count
+
+}
+
+func (ma *MetricsAggregator) AggregateOnce() {
+	podlist, err := ma.ClientSet.CoreV1().Pods("monitoring").List(context.TODO(), metav1.ListOptions{LabelSelector: "app=metrics-logger"})
 	if err != nil {
 		panic(err.Error())
 	}
 	for _, pod := range podlist.Items {
+		lastTime := ma.LastAggregateTimeForNode(pod.Spec.NodeName)
 		for _, container := range pod.Status.ContainerStatuses {
 			if container.Ready {
-				var seconds int64 = 120
-				req := clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name, SinceSeconds: &seconds, Follow: true})
-				podLogs, err := req.Stream(context.TODO())
-				if err != nil {
-					fmt.Println("error in opening stream")
-				}
-				for {
-					buf := make([]byte, 2000)
-					numBytes, err := podLogs.Read(buf)
-					if numBytes == 0 {
-						break
-					}
-					if err == io.EOF {
-						break
-					}
-					if err != nil {
-						break
-					}
-					message := string(buf[:numBytes])
-					fmt.Print(message)
-				}
-				podLogs.Close()
-
+				newTime, count := ma.AggregateFromContainer(pod.Namespace, pod.Name, container.Name, lastTime)
+				ma.LastAggregateTime[pod.Spec.NodeName] = newTime
+				fmt.Printf("Aggregate %d metrics from: Node %s, Pod %s, Container %s\n", count, pod.Spec.NodeName, pod.Name, container.Name)
 			}
 		}
 	}
+}
 
+func (ma *MetricsAggregator) Aggregate(interval time.Duration) {
+	ma.AggregateOnce()
+	for range time.Tick(interval) {
+		ma.AggregateOnce()
+	}
 }

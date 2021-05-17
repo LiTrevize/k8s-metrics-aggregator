@@ -50,10 +50,24 @@ func (ic *InfluxdbClient) WriteMetrics(ml *MetricsLog) {
 	}
 }
 
-func (ic *InfluxdbClient) WriteMetricsFromLog(log string) {
+func (ic *InfluxdbClient) WriteMetricsFromLog(log string) *MetricsLog {
 	ml := MetricsLog{}
-	ml.Parse(log)
+	err := ml.ParseString(log)
+	if err != nil {
+		return nil
+	}
 	ic.WriteMetrics(&ml)
+	return &ml
+}
+
+func (ic *InfluxdbClient) WriteMetricsFromLogBytes(log []byte) *MetricsLog {
+	ml := MetricsLog{}
+	err := ml.ParseBytes(log)
+	if err != nil {
+		return nil
+	}
+	ic.WriteMetrics(&ml)
+	return &ml
 }
 
 func (ic *InfluxdbClient) queryMetricsExample() {
@@ -63,6 +77,12 @@ func (ic *InfluxdbClient) queryMetricsExample() {
 		for result.Next() {
 			if result.TableChanged() {
 				fmt.Printf("table: %s\n", result.Record().Measurement())
+			}
+			for k, v := range result.Record().Values() {
+				if strings.HasPrefix(k, "_") || k == "result" || k == "table" {
+					continue
+				}
+				fmt.Printf("%v: %v ", k, v)
 			}
 			fmt.Printf("%v: %v\n", result.Record().Field(), result.Record().Value())
 		}
@@ -132,6 +152,24 @@ func (ic *InfluxdbClient) queryMetricsRange(name string, start string) *MetricsS
 		fmt.Printf("query error: %s\n", err)
 	}
 	return ms
+}
+
+func (ic *InfluxdbClient) queryLastTime(tagKey, tagVal string) time.Time {
+	result, err := ic.QueryAPI.Query(context.Background(), fmt.Sprintf(`from(bucket:"%s")
+	|> range(start: -1d)
+	|> filter(fn: (r) => r.%s == "%s")
+	|> last()`, ic.Bucket, tagKey, tagVal))
+	if err == nil {
+		for result.Next() {
+			return result.Record().Time()
+		}
+		if result.Err() != nil {
+			fmt.Printf("query parsing error: %s\n", result.Err().Error())
+		}
+	} else {
+		fmt.Printf("query error: %s\n", err)
+	}
+	return time.Now()
 }
 
 type MetricsSeries struct {

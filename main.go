@@ -1,8 +1,14 @@
 package main
 
+import (
+	"fmt"
+)
+
 func main() {
 	ma := NewMetricsAggregator()
-	ma.Test()
+	fmt.Println(ma.LastAggregateTimeForNode("ubuntu16"))
+	ma.IC.queryMetricsExample()
+	// ma.Aggregate(time.Minute)
 	// ic := NewInfluxdbClient()
 	// ic.writeMetricsExample()
 	// ic.WriteMetricsFromLog(`{"name":"cpu_usage_nano_cores","tag":{"node":"ubuntu16"},"val":195703672,"time":"2021-05-06T14:07:13.234253206+08:00"}`)

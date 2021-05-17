@@ -22,7 +22,12 @@ func (ml *MetricsLog) Log() {
 	fmt.Println(string(b))
 }
 
-func (ml *MetricsLog) Parse(log string) error {
+func (ml *MetricsLog) ParseString(log string) error {
 	err := json.Unmarshal([]byte(log), &ml)
+	return err
+}
+
+func (ml *MetricsLog) ParseBytes(log []byte) error {
+	err := json.Unmarshal(log, &ml)
 	return err
 }
