@@ -97,6 +97,7 @@ func (ic *InfluxdbClient) queryMetricsExample() {
 
 func (ic *InfluxdbClient) queryMetricsLatest(name string) []*MetricsLog {
 	lastTime := ic.queryLastTime("_measurement", name)
+	lastTime = lastTime.Add(-time.Second * 5)
 	mlogs := make([]*MetricsLog, 0, 5)
 	result, err := ic.QueryAPI.Query(context.Background(), fmt.Sprintf(`from(bucket:"%s")
     |> range(start: %v)
@@ -158,6 +159,9 @@ func (ic *InfluxdbClient) queryMetricsRange(name string, start string) []*Metric
 			ms.Values = append(ms.Values, result.Record().Value())
 			ms.Time = append(ms.Time, result.Record().Time())
 		}
+		if len(ms.Values) > 0 {
+			mlogs = append(mlogs, ms)
+		}
 		if result.Err() != nil {
 			fmt.Printf("query parsing error: %s\n", result.Err().Error())
 		}
@@ -169,7 +173,7 @@ func (ic *InfluxdbClient) queryMetricsRange(name string, start string) []*Metric
 
 func (ic *InfluxdbClient) queryLastTime(tagKey, tagVal string) time.Time {
 	result, err := ic.QueryAPI.Query(context.Background(), fmt.Sprintf(`from(bucket:"%s")
-	|> range(start: -1d)
+	|> range(start: -7d)
 	|> filter(fn: (r) => r.%s == "%s")
 	|> last()`, ic.Bucket, tagKey, tagVal))
 	if err == nil {
