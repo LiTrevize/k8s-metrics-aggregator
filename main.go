@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -20,28 +22,28 @@ gpu_device_info
 
 func main() {
 	ma := NewMetricsAggregator()
-	fmt.Println(ma.LastAggregateTimeForNode("ubuntu16"))
-	mlogs := ma.IC.queryMetricsRange("pod_memory_usage_bytes", "-5d")
-	for _, mlog := range mlogs {
-		fmt.Printf("%+v\n", mlog)
-	}
-
+	go ma.Aggregate(time.Minute)
 	// http server
 	// 1.创建路由
 	r := gin.Default()
 	// 2.绑定路由规则，执行的函数
 	// gin.Context，封装了request和response
-	r.GET("/metrics", func(c *gin.Context) {
+	r.GET("/metric", func(c *gin.Context) {
 		c.String(http.StatusOK, AllMetrics)
 	})
-	r.GET("/metrics/:name", func(c *gin.Context) {
+	r.GET("/metric/:name", func(c *gin.Context) {
 		name := c.Param("name")
 		start := c.DefaultQuery("start", "")
+		filterStr := c.DefaultQuery("filter", "")
+		var filter []string
+		if filterStr != "" {
+			filter = strings.Split(filterStr, ",")
+		}
 		if start == "" {
-			mlogs := ma.IC.queryMetricsLatest(name)
+			mlogs := ma.IC.queryMetricsLatest(name, filter...)
 			c.JSON(http.StatusOK, map[string][]*MetricsLog{"data": mlogs})
 		} else {
-			mlogs := ma.IC.queryMetricsRange(name, start)
+			mlogs := ma.IC.queryMetricsRange(name, start, filter...)
 			fmt.Printf("%+v\n", mlogs)
 			c.JSON(http.StatusOK, map[string][]*MetricsSeries{"data": mlogs})
 		}
