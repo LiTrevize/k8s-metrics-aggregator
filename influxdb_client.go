@@ -23,6 +23,7 @@ func NewInfluxdbClient() *InfluxdbClient {
 	ic := new(InfluxdbClient)
 	url := "http://127.0.0.1:8086"
 	token := "KhYF9SoMOHcb9m8DJnrwRH5LVwoRLy-YVGmZKSYegp6LC5CEiKoksGFF2KK4bZFx1gHiS4lCZKDP1V9kN2oUrw=="
+	// token := "N-zUv6DraQNW41iYrWJ4IJsyRdqP3j94NfR6XxQWVxMu-NxqZ6pXAlganm4iQIbSpz4CXZOulFzekLcFi7y6Lg=="
 	ic.Client = influxdb2.NewClient(url, token)
 	ic.Org = "SJTU"
 	ic.Bucket = "metrics"
@@ -113,7 +114,7 @@ func (ic *InfluxdbClient) makeFluxQuery(metric string, start interface{}, last b
 
 func (ic *InfluxdbClient) queryMetricsLatest(name string, filter ...string) []*MetricsLog {
 	lastTime := ic.queryLastTime("_measurement", name)
-	lastTime = lastTime.Add(-time.Second * 5)
+	lastTime = lastTime.Add(-time.Minute)
 	mlogs := make([]*MetricsLog, 0, 5)
 	result, err := ic.QueryAPI.Query(context.Background(), ic.makeFluxQuery(name, lastTime.Format(time.RFC3339), true, filter...))
 	if err == nil {
@@ -197,7 +198,7 @@ func (ic *InfluxdbClient) queryLastTime(tagKey, tagVal string) time.Time {
 	} else {
 		fmt.Printf("query error: %s\n", err)
 	}
-	return time.Now()
+	return time.Now().AddDate(0, 0, -1)
 }
 
 type MetricsSeries struct {
